@@ -1,0 +1,64 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+        vendor = JvmVendorSpec.AMAZON
+    }
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:6.0.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+def jdkVersion = javaToolchains.launcherFor(java.toolchain).map { it.metadata.javaRuntimeVersion }
+def verifyJdk = tasks.register('verifyJdk') {
+    inputs.property('jdkVersion', jdkVersion)
+    doLast {
+        String version = inputs.properties.jdkVersion
+        if (Runtime.Version.parse(version).version() != [25, 0, 4]) {
+            throw new GradleException("Set the Gradle JVM to Amazon Corretto 25.0.4 (found ${version}).")
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    dependsOn verifyJdk
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
+    testLogging {
+        events 'failed'
+        exceptionFormat = 'short'
+    }
+}
+
+sourceSets {
+    main.java.srcDirs = ['Benchmark4']
+    test.java.srcDirs = ['tests']
+}
+
+[
+    runFactory: 'Q1_Factory.FactoryDriver',
+    runObserver: 'Q2_Observer.ObserverDriver',
+    runBuilder: 'Q3_Builder.BuilderDriver'
+].each { taskName, driver ->
+    tasks.register(taskName, JavaExec) {
+        group = 'application'
+        description = "Run ${driver}."
+        classpath = sourceSets.main.runtimeClasspath
+        mainClass = driver
+        javaLauncher = javaToolchains.launcherFor(java.toolchain)
+    }
+}
